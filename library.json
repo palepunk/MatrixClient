@@ -1,0 +1,23 @@
+{
+    "name": "MatrixClient",
+    "version": "1.0.0",
+    "description": "A client library for interacting with Matrix servers using an ESP32.",
+    "keywords": ["matrix", "esp32", "client"],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/palepunk/MatrixClient"
+    },
+    "authors": [
+        {
+            "name": "palepunk",
+            "email": "palepunk@plugdio.com",
+            "maintainer": true
+        }
+    ],
+    "license": "MIT",
+    "frameworks": "arduino",
+    "platforms": "espressif32",
+    "dependencies": {
+        "ArduinoJson": "^6.18.0"
+    }
+}
