@@ -2,6 +2,33 @@
 
 A client library for interacting with Matrix servers using an ESP32.
 
+## What is Matrix?
+
+Matrix is an open standard for decentralized communication. It is a protocol that enables secure, real-time communication over the internet. Matrix allows users to send messages, share files, and participate in voice and video calls. It is designed to be open and interoperable, allowing communication across different services and platforms.
+
+## Supported Matrix Protocol Version and Methods
+
+This library implements version 3 (v3) of the Matrix client-server API. The following methods have been implemented:
+
+### Authentication
+
+- **Login**: Authenticate with the Matrix server using a username and password to obtain an access token.
+
+### Messaging
+
+- **Send Direct Message**: Send a direct message to a specified user.
+- **Send Message to Room**: Send a message to a specified room.
+- **Send Read Receipt**: Send a read receipt for a specific event in a room.
+
+### Room Management
+
+- **Create Room**: Create a new room and invite users.
+- **Join Room**: Join an existing room by its room ID.
+
+### Synchronization
+
+- **Sync**: Synchronize the client's state with the server, receiving updates on messages, invitations, and other events.
+
 ## Installation
 
 ### Using PlatformIO
