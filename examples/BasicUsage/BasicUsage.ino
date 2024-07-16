@@ -60,7 +60,7 @@ void loop() {
     }
 
     if(event.eventType == "invitation" && !event.roomEncryption && event.sender == authorizedUserId) {
-        bot.joinRoom.joinRoom(event.roomId);
+        matrixClient.joinRoom.joinRoom(event.roomId);
     }
 
     if(event.eventType == "message" && event.sender == authorizedUserId) {

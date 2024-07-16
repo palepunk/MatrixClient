@@ -8,11 +8,12 @@ Matrix is an open standard for decentralized communication. It is a protocol tha
 
 ## Supported Matrix Protocol Version and Methods
 
-This library implements version 3 (v3) of the Matrix client-server API. The following methods have been implemented:
+This library implements parts of version 3 (v3) of the Matrix client-server API. The following methods have been implemented:
 
 ### Authentication
 
-- **Login**: Authenticate with the Matrix server using a username and password to obtain an access token.
+- **Server Discovery**: partly implemented to find the homeserer based on the username. Fallback is using the defaultServerHost
+- **Login**: Authenticate with the Matrix server using a username and password to obtain an access and refresh token.
 
 ### Messaging
 
@@ -27,7 +28,7 @@ This library implements version 3 (v3) of the Matrix client-server API. The foll
 
 ### Synchronization
 
-- **Sync**: Synchronize the client's state with the server, receiving updates on messages, invitations, and other events.
+- **Sync**: Synchronize the client's state with the server, receiving updates on messages, invitations, and other events. Only invitations and messages are handled after the client has connected. Previous and other type of events are ignored.
 
 ## Installation
 
@@ -55,7 +56,7 @@ const char* password = "your-PASSWORD";
 const char* authorizedUserId = "@authorized_user:matrix.org";
 const char* matrixUser = "your-matrix-username";
 const char* matrixPassword = "your-matrix-password";
-const char* defaultServerHost = "matrix.org";
+const char* defaultServerHost = "matrix.org"; // if server discovery is not working
 
 WiFiClientSecure client;
 MatrixClient matrixClient(client);
@@ -105,6 +106,15 @@ void loop() {
      matrixClient.logger("Message Content: " + event.messageContent);
      matrixClient.logger("-------------------");
  }
+
+    if(event.eventType == "invitation" && !event.roomEncryption && event.sender == masterUserId) {
+        matrixClient.joinRoom(event.roomId);
+    }
+
+    if(event.eventType == "message" && event.sender == masterUserId) {
+        matrixClient.sendReadReceipt(event.roomId, event.eventId);
+        matrixClient.sendMessageToRoom(event.roomId, "Unknown command");
+    }
 
  delay(1000);  // Delay to simulate periodic checks
 }

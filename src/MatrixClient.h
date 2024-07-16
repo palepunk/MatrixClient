@@ -30,6 +30,7 @@ public:
     bool sendReadReceipt(const String& roomId, const String& eventId);
     bool sendMessageToRoom(const String& roomId, const String& message, const String& msgType = "m.text");
     std::vector<MatrixEvent> getRecentEvents();
+    void logger(const String& message);
 
     int syncTimeout = 5000; // The maximum time to wait, in milliseconds, before server responds to the sync request.
     unsigned int waitForResponse = 1000;
@@ -44,7 +45,6 @@ private:
     bool ensureAccessToken();
     bool refreshAccessToken();
     void storeEvent(const MatrixEvent& event);
-    void logger(const String& message);
 
     Client *client;
     String homeserverUrl;
