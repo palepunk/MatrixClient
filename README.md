@@ -28,14 +28,14 @@ This library implements parts of version 3 (v3) of the Matrix client-server API.
 
 ### Synchronization
 
-- **Sync**: Synchronize the client's state with the server, receiving updates on messages, invitations, and other events. Only invitations and messages are handled after the client has connected. Previous and other type of events are ignored.
+- **Sync**: Synchronize the client's state with the server, receiving updates on messages, invitations, and other events. Only invitations and unencrypted messages are handled after the client has connected. Previous and other type of events are ignored.
 
 ## Installation
 
 ### Using PlatformIO
 
 1. Open your PlatformIO project.
-2. Add the following line to your `platformio.ini` file: lib_deps = https://github.com/plugdio/MatrixClient
+2. Add the following line to your `platformio.ini` file: lib_deps = https://github.com/palepunk/MatrixClient.git
 
 
 ### Manual Installation
@@ -69,7 +69,8 @@ void setup() {
      delay(1000);
      matrixClient.logger("Connecting to WiFi...");
  }
-
+ client.setInsecure();
+ 
  matrixClient.logger("Connected to WiFi");
 
  matrixClient.setMasterUserId(authorizedUserId);
@@ -105,17 +106,17 @@ void loop() {
      matrixClient.logger("Message Type: " + event.messageType);
      matrixClient.logger("Message Content: " + event.messageContent);
      matrixClient.logger("-------------------");
- }
 
-    if(event.eventType == "invitation" && !event.roomEncryption && event.sender == masterUserId) {
+    if(event.eventType == "invitation" && !event.roomEncryption && event.sender == authorizedUserId) {
         matrixClient.joinRoom(event.roomId);
     }
 
-    if(event.eventType == "message" && event.sender == masterUserId) {
+    if(event.eventType == "message" && event.sender == authorizedUserId) {
         matrixClient.sendReadReceipt(event.roomId, event.eventId);
         matrixClient.sendMessageToRoom(event.roomId, "Unknown command");
     }
-
+ }
+ 
  delay(1000);  // Delay to simulate periodic checks
 }
 

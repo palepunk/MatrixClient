@@ -22,6 +22,8 @@ void setup() {
         matrixClient.logger("Connecting to WiFi...");
     }
 
+    client.setInsecure();
+
     matrixClient.logger("Connected to WiFi");
 
     matrixClient.setMasterUserId(authorizedUserId);
@@ -57,17 +59,16 @@ void loop() {
         matrixClient.logger("Message Type: " + event.messageType);
         matrixClient.logger("Message Content: " + event.messageContent);
         matrixClient.logger("-------------------");
-    }
 
-    if(event.eventType == "invitation" && !event.roomEncryption && event.sender == authorizedUserId) {
-        matrixClient.joinRoom.joinRoom(event.roomId);
-    }
+        if(event.eventType == "invitation" && !event.roomEncryption && event.sender == authorizedUserId) {
+            matrixClient.joinRoom.joinRoom(event.roomId);
+        }
 
-    if(event.eventType == "message" && event.sender == authorizedUserId) {
-        matrixClient.sendReadReceipt(event.roomId, event.eventId);
-        matrixClient.sendMessageToRoom(event.roomId, "Unknown command");
+        if(event.eventType == "message" && event.sender == authorizedUserId) {
+            matrixClient.sendReadReceipt(event.roomId, event.eventId);
+            matrixClient.sendMessageToRoom(event.roomId, "Unknown command");
+        }
     }
-
     delay(1000);  // Delay to simulate periodic checks
 }
 
