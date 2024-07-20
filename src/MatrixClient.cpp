@@ -3,14 +3,16 @@
 
 #define ZERO_COPY(STR)    ((char*)STR.c_str())
 
-MatrixClient::MatrixClient(Client &client) {
-    this->client = &client;
+LogLevel MatrixClient::logLevel = INFO; // Set default log level
+
+MatrixClient::MatrixClient(Client& client, MatrixClient::LoggerFunction logger)
+    : client(&client), logger(logger ? logger : MatrixClient::defaultLoggerFunction) {
 }
 
 bool MatrixClient::discoverServer(const String& matrixUser) {
     int colonIndex = matrixUser.indexOf(':');
     if (colonIndex == -1) {
-        logger("Invalid Matrix ID");
+        logger(ERROR, "Invalid Matrix ID");
         return false;
     }
 
@@ -24,15 +26,15 @@ bool MatrixClient::discoverServer(const String& matrixUser) {
     if (!error) {
         if (doc.containsKey("m.homeserver") && doc["m.homeserver"].containsKey("base_url")) {
             homeserverUrl = doc["m.homeserver"]["base_url"].as<String>();
-            logger("Discovered server URL: " + homeserverUrl);
+            logger(DEBUG, "Discovered server URL: " + homeserverUrl);
             return true;
         } else {
-            logger("No m.homeserver or base_url found in response");
+            logger(ERROR, "No m.homeserver or base_url found in response");
         }
     } else {
-        logger("deserializeJson() failed: ");
-        logger(error.c_str());
-        logger("responseBody: " + responseBody);
+        logger(ERROR, "deserializeJson() failed: ");
+        logger(ERROR, error.c_str());
+        logger(ERROR, "responseBody: " + responseBody);
     }
 
     return false;
@@ -41,7 +43,7 @@ bool MatrixClient::discoverServer(const String& matrixUser) {
 bool MatrixClient::login(const String& matrixUser, const String& matrixPassword, const String& defaultServerHost) {
     if (!discoverServer(matrixUser)) {
         homeserverUrl = "https://" + defaultServerHost;
-        logger("Using default server URL: " + homeserverUrl);
+        logger(INFO, "Using default server URL: " + homeserverUrl);
     }
 
     // Generate unique device ID using the ESP32's MAC address
@@ -72,21 +74,21 @@ bool MatrixClient::login(const String& matrixUser, const String& matrixPassword,
             accessToken = doc["access_token"].as<String>();
             if (doc.containsKey("refresh_token")) {
                 refreshToken = doc["refresh_token"].as<String>();
-                logger("Got the refresh token: " + refreshToken);
+                logger(DEBUG, "Got the refresh token: " + refreshToken);
             }
             if (doc.containsKey("expires_in_ms")) {
                 tokenExpiryTime = millis() + doc["expires_in_ms"].as<unsigned long>();
-                logger("Access token expires in: " + String(doc["expires_in_ms"].as<unsigned long>()) + " ms");
+                logger(DEBUG, "Access token expires in: " + String(doc["expires_in_ms"].as<unsigned long>()) + " ms");
             }
-            logger("Got the access token: " + accessToken);
+            logger(DEBUG, "Got the access token: " + accessToken);
             return true;
         } else {
-            logger("No access token found in response");
+            logger(ERROR, "No access token found in response");
         }
     } else {
-        Serial.print("deserializeJson() failed: ");
-        logger(error.c_str());
-        logger("responseBody: " + responseBody);
+        logger(ERROR, "deserializeJson() failed: ");
+        logger(ERROR, error.c_str());
+        logger(ERROR, "responseBody: " + responseBody);
     }
 
     return false;
@@ -94,7 +96,7 @@ bool MatrixClient::login(const String& matrixUser, const String& matrixPassword,
 
 bool MatrixClient::sync() {
     if (!ensureAccessToken()) {
-        logger("Cannot sync: failed to ensure access token");
+        logger(ERROR, "Cannot sync: failed to ensure access token");
         return false;
     }
 
@@ -109,13 +111,13 @@ bool MatrixClient::sync() {
     String responseBody = performHTTPRequest(url, "GET", "");
 
     if (!extractNextBatch(responseBody)) {
-//        logger("Next batch not found - sync");
+        logger(DEBUG, "Next batch not found - sync");
     }
 
     DynamicJsonDocument doc(maxMessageLength * 2);  // Increased size to handle larger sync responses
     DeserializationError error = deserializeJson(doc, ZERO_COPY(responseBody));
     if (!error) {
-        if (!syncToken.isEmpty()) { // don't processess the initial sync
+        if (!syncToken.isEmpty()) { // don't process the initial sync
             // Process events
             JsonObject rooms = doc["rooms"].as<JsonObject>();
             JsonObject join = rooms["join"].as<JsonObject>();
@@ -170,9 +172,9 @@ bool MatrixClient::sync() {
         }
 
     } else {
-//        Serial.print("sync deserializeJson() failed: ");
-//        logger(error.c_str());
-//        logger("sync responseBody: " + responseBody);
+        logger(ERROR, "sync deserializeJson() failed: ");
+        logger(ERROR, error.c_str());
+        logger(ERROR, "sync responseBody: " + responseBody);
     }
 
     return true;
@@ -191,25 +193,25 @@ bool MatrixClient::refreshAccessToken() {
     if (!error) {
         if (doc.containsKey("access_token")) {
             accessToken = doc["access_token"].as<String>();
-            logger("Got the access token: " + accessToken);
+            logger(DEBUG, "Got the access token: " + accessToken);
             if (doc.containsKey("refresh_token")) {
                 refreshToken = doc["refresh_token"].as<String>();
-                logger("Got the refresh token: " + refreshToken);
+                logger(DEBUG, "Got the refresh token: " + refreshToken);
                 if (doc.containsKey("expires_in_ms")) {
                     tokenExpiryTime = millis() + doc["expires_in_ms"].as<unsigned long>();
-                    logger("Access token refreshed. New expiry in: " + String(doc["expires_in_ms"].as<unsigned long>()) + " ms");
+                    logger(DEBUG, "Access token refreshed. New expiry in: " + String(doc["expires_in_ms"].as<unsigned long>()) + " ms");
                 }
                 return true;
 
             }
         } else {
-            logger("No access token found in response");
-            logger(responseBody);
-            logger("You should log in again!");
+            logger(ERROR, "No access token found in response");
+            logger(ERROR, responseBody);
+            logger(ERROR, "You should log in again!");
         }
     } else {
-        Serial.print("refresh deserializeJson() failed: ");
-        logger(error.c_str());
+        logger(ERROR, "refresh deserializeJson() failed: ");
+        logger(ERROR, error.c_str());
         return false;
     }
     return false;
@@ -217,7 +219,7 @@ bool MatrixClient::refreshAccessToken() {
 
 bool MatrixClient::ensureAccessToken() {
     if (millis() >= tokenExpiryTime - 10000) {
-        logger("Access token expired, refreshing...");
+        logger(INFO, "Access token expired, refreshing...");
         return refreshAccessToken();
     }
     return true;
@@ -229,12 +231,12 @@ void MatrixClient::setMasterUserId(const String& userId) {
 
 bool MatrixClient::sendDMToMaster(const String& message, const String& msgType) {
     if (masterUserId.isEmpty()) {
-        logger("Master user has not been set yet");
+        logger(ERROR, "Master user has not been set yet");
         return false;
     }
 
     if (!createRoom(masterUserId, masterRoomId)) {
-        logger("Failed to create master room");
+        logger(ERROR, "Failed to create master room");
         return false;
     } else {
         return sendMessageToRoom(masterRoomId, message, msgType);
@@ -243,7 +245,7 @@ bool MatrixClient::sendDMToMaster(const String& message, const String& msgType) 
 
 bool MatrixClient::createRoom(const String& userId, String& roomId) {
     if (!ensureAccessToken()) {
-        logger("Cannot create room: failed to ensure access token");
+        logger(ERROR, "Cannot create room: failed to ensure access token");
         return false;
     }
 
@@ -264,15 +266,15 @@ bool MatrixClient::createRoom(const String& userId, String& roomId) {
     if (!error) {
         if (doc.containsKey("room_id")) {
             roomId = doc["room_id"].as<String>();
-            logger("Room created: " + roomId);
+            logger(DEBUG, "Room created: " + roomId);
             return true;
         } else {
-            logger("No room_id found in response");
+            logger(ERROR, "No room_id found in response");
         }
     } else {
-        Serial.print("createRoom deserializeJson() failed: ");
-        logger(error.c_str());
-        logger(responseBody);
+        logger(ERROR, "createRoom deserializeJson() failed: ");
+        logger(ERROR, error.c_str());
+        logger(ERROR, responseBody);
     }
 
     return false;
@@ -280,7 +282,7 @@ bool MatrixClient::createRoom(const String& userId, String& roomId) {
 
 bool MatrixClient::sendMessageToRoom(const String& roomId, const String& message, const String& msgType) {
     if (!ensureAccessToken()) {
-        logger("Cannot send message: failed to ensure access token");
+        logger(ERROR, "Cannot send message: failed to ensure access token");
         return false;
     }
 
@@ -299,16 +301,16 @@ bool MatrixClient::sendMessageToRoom(const String& roomId, const String& message
 
     if (!error) {
         if (doc.containsKey("event_id")) {
-            logger("Message sent to room: " + roomId);
+            logger(INFO, "Message sent to room: " + roomId);
             return true;
         } else {
-            logger("No event_id found in response");
-            logger(responseBody);
+            logger(ERROR, "No event_id found in response");
+            logger(ERROR, responseBody);
         }
     } else {
-        Serial.print("sendMessageToRoom deserializeJson() failed: ");
-        logger(error.c_str());
-        logger(responseBody);
+        logger(ERROR, "sendMessageToRoom deserializeJson() failed: ");
+        logger(ERROR, error.c_str());
+        logger(ERROR, responseBody);
     }
 
     return false;
@@ -316,7 +318,7 @@ bool MatrixClient::sendMessageToRoom(const String& roomId, const String& message
 
 bool MatrixClient::joinRoom(const String& roomId) {
     if (!ensureAccessToken()) {
-        logger("Cannot join room: failed to ensure access token");
+        logger(ERROR, "Cannot join room: failed to ensure access token");
         return false;
     }
     String url = homeserverUrl + "/_matrix/client/v3/join/" + roomId;
@@ -326,7 +328,7 @@ bool MatrixClient::joinRoom(const String& roomId) {
 
 bool MatrixClient::sendReadReceipt(const String& roomId, const String& eventId) {
     if (!ensureAccessToken()) {
-        logger("Cannot send read reciept: failed to ensure access token");
+        logger(ERROR, "Cannot send read receipt: failed to ensure access token");
         return false;
     }
     String url = homeserverUrl + "/_matrix/client/v3/rooms/" + roomId + "/receipt/m.read/" + eventId;
@@ -342,7 +344,7 @@ String MatrixClient::performHTTPRequest(const String& url, const String& method,
     // Parse URL
     int index = url.indexOf("://");
     if (index == -1) {
-        logger("Invalid URL");
+        logger(ERROR, "Invalid URL");
         return "";
     }
 
@@ -350,14 +352,14 @@ String MatrixClient::performHTTPRequest(const String& url, const String& method,
 
     index = remainder.indexOf('/');
     if (index == -1) {
-        logger("Invalid URL");
+        logger(ERROR, "Invalid URL");
         return "";
     }
     host = remainder.substring(0, index);
     path = remainder.substring(index);
 
     if (!client->connect(host.c_str(), httpsPort)) {
-        logger("Connection to " + host + " failed");
+        logger(ERROR, "Connection to " + host + " failed");
         return "";
     }
 
@@ -381,7 +383,7 @@ String MatrixClient::performHTTPRequest(const String& url, const String& method,
     readHTTPResponse(responseBody, headers);
     client->stop();
 
- //   logger("HTTP " + method + " request to " + url + " completed with response: " + responseBody);
+    logger(DEBUG, "HTTP " + method + " request to " + url + " completed with response: " + responseBody);
 
     return responseBody;
 }
@@ -422,7 +424,6 @@ bool MatrixClient::readHTTPResponse(String &body, String &headers) {
     return responseReceived;
 }
 
-
 String MatrixClient::extractJsonBody(const String& responseBody) {
     int startIndex = responseBody.indexOf('{');
     int endIndex = responseBody.lastIndexOf('}');
@@ -453,20 +454,4 @@ std::vector<MatrixEvent> MatrixClient::getRecentEvents() {
     std::vector<MatrixEvent> events = recentEvents;
     recentEvents.clear();
     return events;
-}
-
-void MatrixClient::logger(const String& message) {
-    unsigned long currentMillis = millis();
-    unsigned long hours = (currentMillis / 3600000) % 24;
-    unsigned long minutes = (currentMillis / 60000) % 60;
-    unsigned long seconds = (currentMillis / 1000) % 60;
-    unsigned long milliseconds = currentMillis % 1000;
-
-    char timeBuffer[16];
-    snprintf(timeBuffer, sizeof(timeBuffer), "%02lu:%02lu:%02lu.%03lu", hours, minutes, seconds, milliseconds);
-
-    Serial.print("[");
-    Serial.print(timeBuffer);
-    Serial.print("] ");
-    Serial.println(message);
 }

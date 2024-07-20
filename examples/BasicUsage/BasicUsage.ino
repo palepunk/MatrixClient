@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 #include "MatrixClient.h"
 
 const char* ssid = "your-SSID";
@@ -11,64 +13,102 @@ const char* matrixPassword = "your-matrix-password";
 const char* defaultServerHost = "matrix-client.matrix.org";
 
 WiFiClientSecure client;
-MatrixClient matrixClient(client);
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", 0, 60000);
+
+void logger(LogLevel level, const String& message) {
+    if (level <= MatrixClient::logLevel) {
+        timeClient.update();
+        unsigned long epochTime = timeClient.getEpochTime();
+        unsigned long hours = (epochTime % 86400L) / 3600;
+        unsigned long minutes = (epochTime % 3600) / 60;
+        unsigned long seconds = epochTime % 60;
+
+        char timeBuffer[16];
+        snprintf(timeBuffer, sizeof(timeBuffer), "%02lu:%02lu:%02lu", hours, minutes, seconds);
+
+        String logMessage = "[" + String(timeBuffer) + "] ";
+        switch (level) {
+            case ERROR:
+                logMessage += "[ERROR] ";
+                break;
+            case INFO:
+                logMessage += "[INFO] ";
+                break;
+            case DEBUG:
+                logMessage += "[DEBUG] ";
+                break;
+        }
+        logMessage += message;
+        Serial.println(logMessage);
+    }
+}
+
+MatrixClient matrixClient(client, logger);
 
 void setup() {
     Serial.begin(115200);
     WiFi.begin(ssid, password);
 
+    Serial.print("Connecting to WiFi...");
     while (WiFi.status() != WL_CONNECTED) {
         delay(1000);
-        matrixClient.logger("Connecting to WiFi...");
+        Serial.print(".");
+    }
+    Serial.println("");
+    Serial.println("Connected to WiFi");
+
+    timeClient.begin();
+    while (!timeClient.update()) {
+        timeClient.forceUpdate();
     }
 
     client.setInsecure();
 
-    matrixClient.logger("Connected to WiFi");
-
     matrixClient.setMasterUserId(authorizedUserId);
+    MatrixClient::logLevel = DEBUG;
 
     if (matrixClient.login(matrixUser, matrixPassword, defaultServerHost)) {
-        matrixClient.logger("Login successful!");
+        logger(INFO, "Login successful!");
         if (matrixClient.sendDMToMaster("The client is now online.", "m.notice")) {
-            matrixClient.logger("Message sent successfully!");
+            logger(DEBUG, "Message sent successfully!");
         } else {
-            matrixClient.logger("Failed to send message.");
+            logger(ERROR, "Failed to send message.");
         }
     } else {
-        matrixClient.logger("Login failed.");
+        logger(ERROR, "Login failed.");
     }
 }
 
 void loop() {
     if (matrixClient.sync()) {
-        matrixClient.logger("Synced successfully");
+        logger(DEBUG, "Synced successfully");
     } else {
-        matrixClient.logger("Failed to sync");
+        logger(ERROR, "Failed to sync");
     }
 
     std::vector<MatrixEvent> events = matrixClient.getRecentEvents();
     for (const MatrixEvent& event : events) {
-        matrixClient.logger("Event ID: " + event.eventId);
-        matrixClient.logger("Event Type: " + event.eventType);
-        matrixClient.logger("Sender: " + event.sender);
-        matrixClient.logger("Room ID: " + event.roomId);
-        matrixClient.logger("Room Name: " + event.roomName);
-        matrixClient.logger("Room Topic: " + event.roomTopic);
-        matrixClient.logger("Room Encryption: " + String(event.roomEncryption));
-        matrixClient.logger("Message Type: " + event.messageType);
-        matrixClient.logger("Message Content: " + event.messageContent);
-        matrixClient.logger("-------------------");
+        logger(INFO, "Event ID: " + event.eventId);
+        logger(INFO, "Event Type: " + event.eventType);
+        logger(INFO, "Sender: " + event.sender);
+        logger(INFO, "Room ID: " + event.roomId);
+        logger(INFO, "Room Name: " + event.roomName);
+        logger(INFO, "Room Topic: " + event.roomTopic);
+        logger(INFO, "Room Encryption: " + String(event.roomEncryption));
+        logger(INFO, "Message Type: " + event.messageType);
+        logger(INFO, "Message Content: " + event.messageContent);
+        logger(INFO, "-------------------");
 
-        if(event.eventType == "invitation" && !event.roomEncryption && event.sender == authorizedUserId) {
-            matrixClient.joinRoom.joinRoom(event.roomId);
+        if (event.eventType == "invitation" && !event.roomEncryption && event.sender == authorizedUserId) {
+            matrixClient.joinRoom(event.roomId);
         }
 
-        if(event.eventType == "message" && event.sender == authorizedUserId) {
+        if (event.eventType == "message" && event.sender == authorizedUserId) {
             matrixClient.sendReadReceipt(event.roomId, event.eventId);
             matrixClient.sendMessageToRoom(event.roomId, "Unknown command");
         }
     }
+
     delay(1000);  // Delay to simulate periodic checks
 }
-

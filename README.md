@@ -49,6 +49,8 @@ This library implements parts of version 3 (v3) of the Matrix client-server API.
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 #include "MatrixClient.h"
 
 const char* ssid = "your-SSID";
@@ -56,67 +58,115 @@ const char* password = "your-PASSWORD";
 const char* authorizedUserId = "@authorized_user:matrix.org";
 const char* matrixUser = "your-matrix-username";
 const char* matrixPassword = "your-matrix-password";
-const char* defaultServerHost = "matrix.org"; // if server discovery is not working
+const char* defaultServerHost = "matrix-client.matrix.org";  // if server discovery is not working
 
 WiFiClientSecure client;
-MatrixClient matrixClient(client);
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", 0, 60000);
+
+void logger(LogLevel level, const String& message) {
+    if (level <= MatrixClient::logLevel) {
+        timeClient.update();
+        unsigned long epochTime = timeClient.getEpochTime();
+        unsigned long hours = (epochTime % 86400L) / 3600;
+        unsigned long minutes = (epochTime % 3600) / 60;
+        unsigned long seconds = epochTime % 60;
+
+        char timeBuffer[16];
+        snprintf(timeBuffer, sizeof(timeBuffer), "%02lu:%02lu:%02lu", hours, minutes, seconds);
+
+        String logMessage = "[" + String(timeBuffer) + "] ";
+        switch (level) {
+            case ERROR:
+                logMessage += "[ERROR] ";
+                break;
+            case INFO:
+                logMessage += "[INFO] ";
+                break;
+            case DEBUG:
+                logMessage += "[DEBUG] ";
+                break;
+        }
+        logMessage += message;
+        Serial.println(logMessage);
+    }
+}
+
+MatrixClient matrixClient(client, logger);
 
 void setup() {
- Serial.begin(115200);
- WiFi.begin(ssid, password);
+    Serial.begin(115200);
+    WiFi.begin(ssid, password);
 
- while (WiFi.status() != WL_CONNECTED) {
-     delay(1000);
-     matrixClient.logger("Connecting to WiFi...");
- }
- client.setInsecure();
- 
- matrixClient.logger("Connected to WiFi");
+    Serial.print("Connecting to WiFi...");
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(1000);
+        Serial.print(".");
+    }
+    Serial.println("");
+    Serial.println("Connected to WiFi");
 
- matrixClient.setMasterUserId(authorizedUserId);
+    timeClient.begin();
+    while (!timeClient.update()) {
+        timeClient.forceUpdate();
+    }
 
- if (matrixClient.login(matrixUser, matrixPassword, defaultServerHost)) {
-     matrixClient.logger("Login successful!");
-     if (matrixClient.sendDMToMaster("The client is now online.", "m.notice")) {
-         matrixClient.logger("Message sent successfully!");
-     } else {
-         matrixClient.logger("Failed to send message.");
-     }
- } else {
-     matrixClient.logger("Login failed.");
- }
+    client.setInsecure();
+
+    matrixClient.setMasterUserId(authorizedUserId);
+    MatrixClient::logLevel = DEBUG;
+
+    if (matrixClient.login(matrixUser, matrixPassword, defaultServerHost)) {
+        logger(INFO, "Login successful!");
+        if (matrixClient.sendDMToMaster("The client is now online.", "m.notice")) {
+            logger(DEBUG, "Message sent successfully!");
+        } else {
+            logger(ERROR, "Failed to send message.");
+        }
+    } else {
+        logger(ERROR, "Login failed.");
+    }
 }
 
 void loop() {
- if (matrixClient.sync()) {
-     matrixClient.logger("Synced successfully");
- } else {
-     matrixClient.logger("Failed to sync");
- }
-
- std::vector<MatrixEvent> events = matrixClient.getRecentEvents();
- for (const MatrixEvent& event : events) {
-     matrixClient.logger("Event ID: " + event.eventId);
-     matrixClient.logger("Event Type: " + event.eventType);
-     matrixClient.logger("Sender: " + event.sender);
-     matrixClient.logger("Room ID: " + event.roomId);
-     matrixClient.logger("Room Name: " + event.roomName);
-     matrixClient.logger("Room Topic: " + event.roomTopic);
-     matrixClient.logger("Room Encryption: " + String(event.roomEncryption));
-     matrixClient.logger("Message Type: " + event.messageType);
-     matrixClient.logger("Message Content: " + event.messageContent);
-     matrixClient.logger("-------------------");
-
-    if(event.eventType == "invitation" && !event.roomEncryption && event.sender == authorizedUserId) {
-        matrixClient.joinRoom(event.roomId);
+    if (matrixClient.sync()) {
+        logger(DEBUG, "Synced successfully");
+    } else {
+        logger(ERROR, "Failed to sync");
     }
 
-    if(event.eventType == "message" && event.sender == authorizedUserId) {
-        matrixClient.sendReadReceipt(event.roomId, event.eventId);
-        matrixClient.sendMessageToRoom(event.roomId, "Unknown command");
+    std::vector<MatrixEvent> events = matrixClient.getRecentEvents();
+    for (const MatrixEvent& event : events) {
+        logger(INFO, "Event ID: " + event.eventId);
+        logger(INFO, "Event Type: " + event.eventType);
+        logger(INFO, "Sender: " + event.sender);
+        logger(INFO, "Room ID: " + event.roomId);
+        logger(INFO, "Room Name: " + event.roomName);
+        logger(INFO, "Room Topic: " + event.roomTopic);
+        logger(INFO, "Room Encryption: " + String(event.roomEncryption));
+        logger(INFO, "Message Type: " + event.messageType);
+        logger(INFO, "Message Content: " + event.messageContent);
+        logger(INFO, "-------------------");
+
+        if (event.eventType == "invitation" && !event.roomEncryption && event.sender == authorizedUserId) {
+            matrixClient.joinRoom(event.roomId);
+        }
+
+        if (event.eventType == "message" && event.sender == authorizedUserId) {
+            matrixClient.sendReadReceipt(event.roomId, event.eventId);
+            matrixClient.sendMessageToRoom(event.roomId, "Unknown command");
+        }
     }
- }
- 
- delay(1000);  // Delay to simulate periodic checks
+
+    delay(1000);  // Delay to simulate periodic checks
 }
+```
+## Logging Levels
+MatrixClient supports three levels of logging:
 
+* ERROR: Logs critical issues that need immediate attention.
+* INFO: Logs general information about the operation of the program.
+* DEBUG: Logs detailed debugging information.
+
+### Setting Log Level
+The global log level can be set by modifying the logLevel variable in the MatrixClient class. The default log level is INFO.

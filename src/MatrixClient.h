@@ -1,6 +1,7 @@
 #ifndef MATRIX_CLIENT_H
 #define MATRIX_CLIENT_H
 
+#include <functional>
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <Client.h>
@@ -18,9 +19,17 @@ struct MatrixEvent {
     String messageContent;
 };
 
+enum LogLevel {
+    ERROR,
+    INFO,
+    DEBUG
+};
+typedef void (*LoggerFunction)(LogLevel, const String& message);
+
 class MatrixClient {
 public:
-    MatrixClient(Client &client);
+    using LoggerFunction = std::function<void(LogLevel, const String&)>;
+    MatrixClient(Client& client, LoggerFunction logger = nullptr);
     bool login(const String& matrixUser, const String& matrixPassword, const String& defaultServerHost);
     void setMasterUserId(const String& userId);
     bool sendDMToMaster(const String& message, const String& msgType = "m.text");
@@ -30,11 +39,12 @@ public:
     bool sendReadReceipt(const String& roomId, const String& eventId);
     bool sendMessageToRoom(const String& roomId, const String& message, const String& msgType = "m.text");
     std::vector<MatrixEvent> getRecentEvents();
-    void logger(const String& message);
 
     int syncTimeout = 5000; // The maximum time to wait, in milliseconds, before server responds to the sync request.
     unsigned int waitForResponse = 1000;
     int maxMessageLength = 1500;
+
+    static LogLevel logLevel; // Global log level setting
 
 private:
     String performHTTPRequest(const String& url, const String& method, const String& payload, bool useAuth = true);
@@ -47,6 +57,7 @@ private:
     void storeEvent(const MatrixEvent& event);
 
     Client *client;
+    LoggerFunction logger;
     String homeserverUrl;
     String accessToken;
     String refreshToken;
@@ -55,6 +66,11 @@ private:
     String masterRoomId;
     unsigned long tokenExpiryTime;
     std::vector<MatrixEvent> recentEvents;
+    static void defaultLoggerFunction(LogLevel level, const String& message) {
+        if (level <= logLevel) {
+            Serial.println(message);
+        }
+    }
 };
 
 #endif // MATRIX_CLIENT_H
