@@ -336,6 +336,118 @@ bool MatrixClient::sendReadReceipt(const String& roomId, const String& eventId) 
     return true;
 }
 
+bool MatrixClient::sendMediaToRoom(const String& roomId, const String& fileName, const String& contentType, const uint8_t* fileData, size_t fileSize) {
+    String mediaUrl = uploadMedia(fileName, contentType, fileData, fileSize);
+    if (mediaUrl.isEmpty()) {
+        logger(ERROR, "Media upload failed");
+        return false;
+    }
+
+    logger(DEBUG, "Media uploaded. URL: " + mediaUrl);
+
+    StaticJsonDocument<256> req;
+    req["msgtype"] = "m.image";
+    req["body"] = fileName;
+    req["url"] = mediaUrl;
+
+    String payload;
+    serializeJson(req, payload);
+
+    String url = homeserverUrl + "/_matrix/client/v3/rooms/" + roomId + "/send/m.room.message/" + String(millis());
+    String responseBody = performHTTPRequest(url, "PUT", payload);
+
+    DynamicJsonDocument doc(maxMessageLength);
+    DeserializationError error = deserializeJson(doc, ZERO_COPY(responseBody));
+
+    if (!error) {
+        if (doc.containsKey("event_id")) {
+            logger(DEBUG, "Media sent to room: " + roomId + ", " + mediaUrl);
+            return true;
+        } else {
+            logger(ERROR, "No event_id found in response");
+            logger(ERROR, responseBody);
+        }
+    } else {
+        logger(ERROR, "sendMediaToRoom deserializeJson() failed: ");
+        logger(ERROR, error.c_str());
+        logger(ERROR, responseBody);
+    }
+
+    return false;
+}
+
+String MatrixClient::uploadMedia(const String& fileName, const String& contentType, const uint8_t* fileData, size_t fileSize) {
+    if (!ensureAccessToken()) {
+        logger(ERROR, "Cannot upload media: failed to ensure access token");
+        return "";
+    }
+
+    String url = homeserverUrl + "/_matrix/media/v3/upload?filename=" + fileName;
+
+    String host;
+    String path;
+    const int httpsPort = 443;
+
+    // Parse URL
+    int index = url.indexOf("://");
+    if (index == -1) {
+        logger(ERROR, "Invalid URL");
+        return "";
+    }
+
+    String remainder = url.substring(index + 3);
+
+    index = remainder.indexOf('/');
+    if (index == -1) {
+        logger(ERROR, "Invalid URL");
+        return "";
+    }
+    host = remainder.substring(0, index);
+    path = remainder.substring(index);
+
+    if (!client->connect(host.c_str(), httpsPort)) {
+        logger(ERROR, "Connection to " + host + " failed");
+        return "";
+    }
+
+    client->println("POST " + path + " HTTP/1.1");
+    client->println("Host: " + host);
+    client->println("Authorization: Bearer " + accessToken);
+    client->println("Content-Type: " + contentType);
+    client->println("Content-Length: " + String(fileSize));
+    client->println();
+
+    size_t bufferSize = 1024;
+    for (size_t n = 0; n < fileSize; n += bufferSize) {
+      size_t remaining = fileSize - n;
+      size_t chunkSize = remaining < bufferSize ? remaining : bufferSize;
+      client->write(fileData + n, chunkSize);
+    }
+
+    String responseBody, headers;
+    readHTTPResponse(responseBody, headers);
+    client->stop();
+
+    logger(DEBUG, "Media upload response: " + responseBody);
+
+    // Parse the response to get the media URL
+    DynamicJsonDocument doc(maxMessageLength);
+    DeserializationError error = deserializeJson(doc, ZERO_COPY(responseBody));
+    if (!error) {
+        if (doc.containsKey("content_uri")) {
+            return doc["content_uri"].as<String>();
+        } else {
+            logger(ERROR, "No content_uri found in response");
+        }
+    } else {
+        logger(ERROR, "uploadMedia deserializeJson() failed: ");
+        logger(ERROR, error.c_str());
+        logger(ERROR, responseBody);
+    }
+
+    return "";
+}
+
 String MatrixClient::performHTTPRequest(const String& url, const String& method, const String& payload, bool useAuth) {
     String host;
     String path;

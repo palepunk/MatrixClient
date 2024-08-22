@@ -38,6 +38,7 @@ public:
     bool joinRoom(const String& roomId);
     bool sendReadReceipt(const String& roomId, const String& eventId);
     bool sendMessageToRoom(const String& roomId, const String& message, const String& msgType = "m.text");
+    bool sendMediaToRoom(const String& roomId, const String& fileName, const String& contentType, const uint8_t* fileData, size_t fileSize);
     std::vector<MatrixEvent> getRecentEvents();
 
     int syncTimeout = 5000; // The maximum time to wait, in milliseconds, before server responds to the sync request.
@@ -55,6 +56,8 @@ private:
     bool ensureAccessToken();
     bool refreshAccessToken();
     void storeEvent(const MatrixEvent& event);
+    String uploadMedia(const String& fileName, const String& contentType, const uint8_t* fileData, size_t fileSize);
+    
 
     Client *client;
     LoggerFunction logger;
